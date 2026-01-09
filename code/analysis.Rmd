@@ -201,3 +201,114 @@ table_recalc_se |>
 - The recalculated effect sizes are nonetheless still implausibly large. The cohen's ds of .30 to 1.11 in the PSS group are more feasible, but note that this would also require that the "SD"s in Table 3 would have to be converted from SE to SD twice, and inconsistently. Only inspection of the raw data could resolve what happened here.
 - The method notes that analyses were conducted in SPSS version 24 which, to my knowledge, does not produce Cohen's ds but requires the user to calculate them from M/SD/Ns. If so, this manual workflow could plausibly be disrupted by poor tracking of whether values were SE or SD, including double transformation of them. 
 
+## GRIM/MER+TIDES
+
+```{r}
+
+data_table_3_long <- data_table_3 |>
+  pivot_longer(
+    cols = c(m1, sd1, n1, m2, sd2, n2),
+    names_to = c(".value", "group"),
+    names_pattern = "^(m|sd|n)([12])$"
+  ) |>
+  rownames_to_column(var = "id")
+
+data_table_3_grimmertides <- data_table_3_long |>
+  # convert to char
+  mutate(mean_str = as.character(m),
+         sd_str = as.character(sd),
+         mean_str = restore_zeros(mean_str, width = 2),
+         sd_str = restore_zeros(sd_str, width = 2))
+
+res_table_3_grimmer <- data_table_3_grimmertides |>
+  # grim
+  mutate(grim = pmap(.l = list(x = mean_str, 
+                               n = n,
+                               items = n), 
+                     .f = scrutiny::grim)) |>
+  unnest(grim) |>
+  mutate(grimmer = pmap(.l = list(x = mean_str, 
+                                  sd = sd_str,
+                                  n = n,
+                                  items = n),
+                        show_reason = TRUE,
+                        .f = scrutiny::grimmer)) |>
+  unnest_wider(grimmer, names_sep = "_") |>
+  select(id, outcome, group, timepoint, m, sd, n, grim, grim_grimmer = grimmer_1)
+
+res_table_3_grimmer |>
+  filter(!grim | !grim_grimmer)
+
+res_table_3_grimmer |>
+  summarize(prop_grim = mean(grim),
+            prop_grim_grimmer = mean(grim_grimmer)) |>
+  round_up(2)
+
+```
+
+```{r}
+
+data_table_4_long <- data_table_4 |>
+  pivot_longer(
+    cols = c(m1, sd1, n1, m2, sd2, n2),
+    names_to = c(".value", "group"),
+    names_pattern = "^(m|sd|n)([12])$"
+  ) |>
+  rownames_to_column(var = "id")
+
+data_table_4_grimmertides <- data_table_4_long |>
+  # convert to char
+  mutate(mean_str = as.character(m),
+         sd_str = as.character(sd),
+         mean_str = restore_zeros(mean_str, width = 2),
+         sd_str = restore_zeros(sd_str, width = 2))
+
+res_table_4_grimmer <- data_table_4_grimmertides |>
+  # grim
+  mutate(grim = pmap(.l = list(x = mean_str, 
+                               n = n,
+                               items = n), 
+                     .f = scrutiny::grim)) |>
+  unnest(grim) |>
+  mutate(grimmer = pmap(.l = list(x = mean_str, 
+                                  sd = sd_str,
+                                  n = n,
+                                  items = n),
+                        show_reason = TRUE,
+                        .f = scrutiny::grimmer)) |>
+  unnest_wider(grimmer, names_sep = "_") |>
+  select(id, outcome, group, timepoint, m, sd, n, grim, grim_grimmer = grimmer_1)
+
+res_table_4_grimmer |>
+  filter(!grim | !grim_grimmer)
+
+res_table_4_grimmer |>
+  summarize(prop_grim = mean(grim),
+            prop_grim_grimmer = mean(grim_grimmer)) |>
+  round_up(2)
+
+
+# tides would require me to find the min/max of each scale and add it to the data
+# res_table_4_tides <- res_table_4_grimmer |>
+#   mutate(method = "approximate", 
+#          calculate_min_sd = TRUE) |>
+#   # run tides
+#   mutate(tides = pmap_dfr(.l = list(mean = m,
+#                                     sd = sd,
+#                                     n = n, 
+#                                     min = min, 
+#                                     max = max,
+#                                     n_items = n,
+#                                     digits = 2, 
+#                                     method = method,
+#                                     calculate_min_sd = calculate_min_sd,
+#                                     verbose = FALSE),
+#                           .f = tides)) |> 
+#   unnest(tides) 
+# 
+# res_table_4_tides |>
+#   select(id, variable, group, timepoint, mean, sd, n, tides = tides_consistent)
+# 
+# plot_tides_relative(res_table_4_tides)
+
+```
