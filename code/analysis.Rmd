@@ -1,0 +1,194 @@
+---
+title: "Trustworthiness assessment of Azhar et al. (2026)"
+author: "Ian Hussey"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+# Summary of study
+
+DOI: 10.1016/j.jad.2025.121055
+
+- 12 week intervention
+- 1000mg of omega-3 per day vs. 400mg of corn oil per day.
+
+outcomes:
+
+- Perceived Stress Scale (PSS) [primary]
+- Generalized Anxiety Disorder-7 (GAD-7)
+- the Patient Health Questionnaire-9 (PHQ-9)
+- the Pittsburgh Sleep Quality Index (PSQI)
+- the Epworth Sleepiness Scale (ESS)
+- and the Everyday Memory Questionnaire (EMQ)
+
+```{r include=FALSE}
+
+# formatting options
+# set default chunk options
+knitr::opts_chunk$set(message = FALSE, 
+                      warning = FALSE)
+
+```
+
+```{r}
+
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(esc)
+library(roundwork)
+library(waldo)
+library(knitr)
+library(kableExtra)
+# library(scrutiny)
+# library(tides)
+
+
+# round_half_up_min_decimals <- function(x, digits = 2) {
+#   sprintf(paste0("%.", digits, "f"), janitor::round_half_up(x, digits = digits))
+# }
+# 
+# min_decimals <- function(x, digits = 2) {
+#   sprintf(paste0("%.", digits, "f"), x)
+# }
+
+```
+
+# Load data
+
+```{r}
+
+data_table_3 <-
+  read_xlsx(path = "../data/data.xlsx",
+            sheet = "table3") |>
+  janitor::clean_names()
+
+data_table_4 <-
+  read_xlsx(path = "../data/data.xlsx",
+            sheet = "table4_reshaped") |>
+  janitor::clean_names()
+
+```
+
+# Differences
+
+```{r}
+
+compare(x = data_table_3 |> select(m1, m2, sd1, sd2), 
+        y = data_table_4 |> select(m1, m2, sd1, sd2),
+        x_arg = "table3",
+        y_arg = "table4",
+        max_diffs = Inf)
+
+```
+
+- one mean and four SDs differ between table 3 and table 4 for what should be the same estimates restated
+
+# Between grouops Cohen's d recalculation
+
+Note that I haven't used {recalc}, which can recalculate effect size bounds given rounding of estimates, on the basis that the differences between the reported and recalculated are so large. ie the below is a quick eyeball check, whereas recalc is a more in depth one when the recalculated estimates are much closer to the reported ones.
+
+```{r}
+
+d_helper <- function(m1, sd1, n1, m2, sd2, n2) {
+  res <- esc_mean_sd(
+    grp1m = m1, grp1sd = sd1, grp1n = n1, 
+    grp2m = m2, grp2sd = sd2, grp2n = n2,
+    es.type = "d"
+  )
+  
+  output <- tibble(recalc_d_estimate = res$es,
+                   recalc_d_ci_lower = res$ci.lo,
+                   recalc_d_ci_upper = res$ci.hi) |>
+    roundwork::round_up(2)
+  return(output)
+}
+  
+data_table_3_recalc <- data_table_3 |>
+  mutate(esc_stats = pmap(.l = list(m1, sd1, n1, m2, sd2, n2), 
+                          .f = d_helper)) |>
+  unnest_wider(esc_stats) 
+
+data_table_3_recalc |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+
+data_table_4_recalc <- data_table_4 |>
+  mutate(esc_stats = pmap(.l = list(m1, sd1, n1, m2, sd2, n2), 
+                          .f = d_helper)) |>
+  unnest_wider(esc_stats) 
+
+data_table_4_recalc |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+summary of between groups Cohen's d at post
+
+```{r}
+
+bind_rows(
+  data_table_3_recalc |>
+    filter(timepoint == "post") |>
+    mutate(source = "table3"),
+  data_table_4_recalc |>
+    filter(timepoint == "post") |>
+    mutate(source = "table4")
+) |>
+  select(source, outcome, reported_d = d, recalculated_d = recalc_d_estimate) |>
+  arrange(desc(outcome), source) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+## Treat all SDs as if they are mislabelled SEs
+
+```{r}
+
+data_table_3_recalc_se <- data_table_3 |>
+  mutate(sd1 = sd1 * sqrt(n1),
+         sd2 = sd2 * sqrt(n2)) |>
+  mutate(esc_stats = pmap(.l = list(m1, sd1, n1, m2, sd2, n2), 
+                          .f = d_helper)) |>
+  unnest_wider(esc_stats) 
+
+#data_table_3_recalc
+
+
+data_table_4_recalc_se <- data_table_4 |>
+  mutate(sd1 = sd1 * sqrt(n1),
+         sd2 = sd2 * sqrt(n2)) |>
+  mutate(esc_stats = pmap(.l = list(m1, sd1, n1, m2, sd2, n2), 
+                          .f = d_helper)) |>
+  unnest_wider(esc_stats) 
+
+#data_table_4_recalc
+
+bind_rows(
+  data_table_3_recalc_se |>
+    filter(timepoint == "post") |>
+    mutate(source = "table3"),
+  data_table_4_recalc_se |>
+    filter(timepoint == "post") |>
+    mutate(source = "table4")
+) |>
+  select(source, outcome, reported_d = d, recalculated_d = recalc_d_estimate) |>
+  arrange(desc(outcome), source) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+- recalculated values are much closer if we assume that all reported "SDs" are actually mislabelled standard errors. however, the discrepencies between the tables suggest that this isn't universally true, that some are likely SDs. 
+- the method notes “The data are presented as the mean, standard deviation (SD), and standard error of the mean (SEM) for descriptive statistics (PHQ-9, GAD-7, PSS, PSQI, ESS, and memory).” p. 3, but nothing else in text reports an SE explicitly. 
+- The recalculated effect sizes are nonetheless still implausibly large. The cohen's ds of .30 to 1.11 in the PSS group are more feasible, but note that this would also require that the "SD"s in Table 3 would have to be converted from SE to SD twice, and inconsistently. Only inspection of the raw data could resolve what happened here.
+- The method notes that analyses were conducted in SPSS version 24 which, to my knowledge, does not produce Cohen's ds but requires the user to calculate them from M/SD/Ns. If so, this manual workflow could plausibly be disrupted by poor tracking of whether values were SE or SD, including double transformation of them. 
+
