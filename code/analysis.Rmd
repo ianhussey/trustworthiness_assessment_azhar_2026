@@ -118,7 +118,6 @@ data_table_3_recalc |>
   kable() |>
   kable_classic(full_width = FALSE)
 
-
 data_table_4_recalc <- data_table_4 |>
   mutate(esc_stats = pmap(.l = list(m1, sd1, n1, m2, sd2, n2), 
                           .f = d_helper)) |>
@@ -134,7 +133,7 @@ summary of between groups Cohen's d at post
 
 ```{r}
 
-bind_rows(
+table_recalc <- bind_rows(
   data_table_3_recalc |>
     filter(timepoint == "post") |>
     mutate(source = "table3"),
@@ -143,9 +142,14 @@ bind_rows(
     mutate(source = "table4")
 ) |>
   select(source, outcome, reported_d = d, recalculated_d = recalc_d_estimate) |>
-  arrange(desc(outcome), source) |>
+  arrange(desc(outcome), source) 
+
+table_recalc |>
   kable() |>
   kable_classic(full_width = FALSE)
+
+# for pubeer - run in console
+#kable(table_recalc, format = "pipe", digits = 2)
 
 ```
 
@@ -172,7 +176,7 @@ data_table_4_recalc_se <- data_table_4 |>
 
 #data_table_4_recalc
 
-bind_rows(
+table_recalc_se <- bind_rows(
   data_table_3_recalc_se |>
     filter(timepoint == "post") |>
     mutate(source = "table3"),
@@ -181,9 +185,14 @@ bind_rows(
     mutate(source = "table4")
 ) |>
   select(source, outcome, reported_d = d, recalculated_d = recalc_d_estimate) |>
-  arrange(desc(outcome), source) |>
+  arrange(desc(outcome), source) 
+
+table_recalc_se |>
   kable() |>
   kable_classic(full_width = FALSE)
+
+# for pubeer - run in console
+#kable(table_recalc_se, format = "pipe", digits = 2)
 
 ```
 
