@@ -1,0 +1,9 @@
+variable,n,n_exact_match,pct_match,mean_diff,sd_diff,min_diff,max_diff,correlation
+stress_baseline,64,64,100,0,0,0,0,1
+depression_baseline,64,62,96.9,0.08,0.91,-2,7,0.9292
+anxiety_baseline,64,64,100,0,0,0,0,1
+emq_baseline,64,0,0,-25.61,17.83,-76,15,0.3328
+stress_followup,64,14,21.9,0.61,6.85,-20,16,0.6046
+depression_followup,64,20,31.2,1.31,4.9,-10,11,0.4331
+anxiety_followup,64,19,29.7,0.8,4.93,-11,13,0.2439
+emq_followup,64,0,0,-22.11,18.34,-76,27,0.2822

@@ -1,0 +1,299 @@
+---
+title: "Re-analysis of Azhar et al."
+author: "Ian Hussey & Martin Plöderl" 
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+always_allow_html: true
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float:
+      collapsed: false
+      fontsize: 10pt
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE)
+
+# options
+options(knitr.table.format = "html") # necessary configuration of tables
+
+# disable scientific notation
+options(scipen = 999, digits=2) 
+
+```
+
+# Info
+
+Paper here: https://www.sciencedirect.com/science/article/pii/S0165032725024978?via%3Dihub
+
+PubPeer comments: https://pubpeer.com/publications/799F60D117E44BAEE391AC93A216D2#1
+
+# Dependencies
+
+```{r}
+
+# dependencies
+library(esc)
+library(readxl)
+library(effsize)
+library(dplyr)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+print_nice_table <- function(dat){
+  dat |>
+    kable() |>
+    kable_classic(full_width = FALSE)
+}
+
+```
+
+# Participant level data
+
+Shared with Martin 05.02.2026 from JAD, Delbello, Melissa (DELBELMP@UCMAIL.UC.EDU)
+
+There are two data-sheets, one seems to be the raw data ("scales C,I"), hereafter referred to as "raw", and the other one was used for calculation of statistical results ("data for statstics" [sic]), hereafter referred to as "stats".
+
+We cleaned data with "processing.Rmd".
+
+# Direct comparisons
+
+```{r}
+
+sheet_raw <- read_csv("../data/processed/data_processed_sheet_raw.csv")
+sheet_stats <- read_csv("../data/processed/data_processed_sheet_stats.csv")
+
+dat_combined <- full_join(sheet_raw, 
+                          sheet_stats, 
+                          by = c("row", "group"), # note that we previously matched these with age, gender, bmi etc showing that they do indeed match. These were removed to allow the code to run in the anonymised data.
+                          suffix = c("_raw", "_stat"))
+
+```
+
+## Define which columns to compare
+
+We compare only columns present in BOTH harmonised datasets.
+
+```{r}
+
+numeric_vars <- c(
+  # Baseline
+  "stress_baseline", "depression_baseline", "anxiety_baseline", "emq_baseline",
+  # Follow-up
+  "stress_followup", "depression_followup", "anxiety_followup", "emq_followup"
+) 
+
+```
+
+## Quantify numeric differences
+
+```{r}
+
+compare_numeric <- function(var) {
+  d <- sheet_raw[[var]]
+  s <- sheet_stats[[var]]
+
+  tibble(
+    variable      = var,
+    n             = sum(!is.na(d) & !is.na(s)),
+    n_exact_match = sum(d == s, na.rm = TRUE),
+    pct_match     = round(100 * n_exact_match / n, 1),
+    mean_diff     = round(mean(d - s, na.rm = TRUE), 2),
+    sd_diff       = round(sd(d - s, na.rm = TRUE), 2),
+    min_diff      = min(d - s, na.rm = TRUE),
+    max_diff      = max(d - s, na.rm = TRUE),
+    correlation   = round(cor(d, s, use = "complete.obs"), 4)
+  )
+}
+
+numeric_comparison <- map_dfr(numeric_vars, compare_numeric)
+
+numeric_comparison |>
+  print_nice_table()
+
+```
+
+## Row-level detail for discrepant numeric variables
+
+For any variable with < 100% match, show which rows differ.
+
+```{r}
+
+discrepant_vars <- numeric_comparison |>
+  filter(pct_match < 100) |>
+  pull(variable)
+
+row_diffs <- map_dfr(discrepant_vars, \(var) {
+  tibble(
+    variable   = var,
+    row        = 1:nrow(sheet_raw),
+    group      = sheet_raw$group,
+    raw_value = sheet_raw[[var]],
+    stats_value = sheet_stats[[var]],
+    difference = sheet_raw[[var]] - sheet_stats[[var]]
+  ) |>
+    filter(difference != 0 | is.na(difference))
+})
+
+# Summarise by variable and direction
+row_diffs |>
+  group_by(variable, group) |>
+  summarise(
+    n_discrepant  = n(),
+    #n_raw_higher = sum(difference > 0, na.rm = TRUE),
+    #n_stats_higher = sum(difference < 0, na.rm = TRUE),
+    mean_diff = mean(difference, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  print_nice_table()
+
+
+row_diffs |>
+  separate(variable, into = c("outcome", "timepoint"), sep = "_") |>
+  filter(timepoint == "followup") |>
+  ggplot(aes(difference)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_histogram() +
+  theme_linedraw() +
+  facet_grid(outcome ~ group) +
+  xlab("Difference in participant level outcome scores at post\nbetween raw data sheet and stats sheet")
+
+```
+
+Total discrepant cells: `r nrow(row_diffs)`
+
+## Flag pattern: baseline vs follow-up agreement
+
+```{r}
+
+numeric_comparison |>
+  filter(!variable %in% c("age", "sex", "depression_medication",
+                           "diseases", "weight", "height")) |>
+  mutate(
+    timepoint = if_else(str_detect(variable, "followup"), "follow-up", "baseline"),
+    scale     = str_remove(variable, "_(baseline|followup)")
+  ) |>
+  select(scale, timepoint, n_exact_match, pct_match, correlation) |>
+  pivot_wider(
+    names_from  = timepoint,
+    values_from = c(n_exact_match, pct_match, correlation),
+    names_glue  = "{timepoint}_{.value}"
+  ) |>
+  select(scale,
+         baseline_pct_match, `follow-up_pct_match`,
+         baseline_correlation, `follow-up_correlation`) |>
+  print_nice_table()
+
+```
+
+## Save full row-level differences
+
+```{r}
+
+write_csv(row_diffs, "../data/processed/results_row_level_differences.csv")
+write_csv(numeric_comparison, "../data/outputs/results_numeric_comparison_summary.csv")
+
+```
+
+## Plots
+
+```{r fig.height=12, fig.width=8}
+
+dat_combined_outcomes <- dat_combined |>
+  select(id = row, group, contains("_followup_"), contains("_baseline_")) |>
+  select(!contains("_cat_")) |>
+  pivot_longer(cols = c(-id, -group),
+               names_to = c("outcome", "timepoint", "source"),
+               names_sep = "_",
+               values_to = "value") |>
+  pivot_wider(names_from = "source",
+              values_from = "value") |>
+  filter(outcome %in% c("stress",			
+                        "depression",
+                        "anxiety",		
+                        "emq"))
+
+
+ggplot(dat_combined_outcomes, aes(raw, stat, color = group)) +
+  geom_point(alpha = 0.7) +
+  geom_abline(slope = 1, intercept = 0) +
+  theme_linedraw() +
+  #coord_fixed() +
+  facet_grid(outcome ~ timepoint, scales = "free") +
+  xlab("'raw' sheet") +
+  ylab("'stats' sheet") +
+  labs(title = "Comparison of the data between the Excel file's raw and stats sheets",
+       subtitle = "Diagonal line represents perfect agreement")
+
+ggsave("../data/outputs/differences between sheets.png", width = 8, height = 12)
+
+```
+
+Note that scores between the two sheets are matched on their row number, age, gender, and study condition; therefore differences between sheets cannot be due to the result of rearranging row order between them.  
+
+
+## Cohen's d
+
+```{r}
+
+library(effectsize)
+
+dat_combined_outcomes_for_es <- dat_combined |>
+  select(id = row, group, contains("_followup_"), contains("_baseline_")) |>
+  select(!contains("_cat_")) |>
+  pivot_longer(cols = c(-id, -group),
+               names_to = c("outcome", "timepoint", "source"),
+               names_sep = "_",
+               values_to = "score") |>
+  filter(outcome %in% c("stress",			
+                        "depression",
+                        "anxiety",		
+                        "emq"))
+
+results <- dat_combined_outcomes_for_es %>%
+  group_by(outcome, timepoint, source) %>% 
+  group_modify(~ cohens_d(score ~ group, data = .x)) |>
+  select(outcome, timepoint, cohens_d = Cohens_d, cohens_d_ci_lower = CI_low, cohens_d_ci_upper = CI_high) |>
+  mutate_if(is.numeric, round, digits = 2) |>
+  mutate(outcome = forcats::fct_relevel(outcome, "depression", "anxiety", "stress", "emq")) |>
+  arrange(outcome)
+
+results |>
+  print_nice_table()
+
+ggplot(results, aes(cohens_d, outcome, color = source)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_point(position = position_dodge(width = 0.8)) +
+  ggstance::geom_linerangeh(aes(xmin = cohens_d_ci_lower, xmax = cohens_d_ci_upper),
+                            position = position_dodge(width = 0.8)) +
+  theme_linedraw() +
+  xlab("Cohen's d effect size") +
+  ylab("Outcome") +
+  facet_wrap(~ timepoint, ncol = 1)
+
+```
+
+
+```{r}
+
+dat_combined_outcomes_for_es |>
+  filter(outcome == "depression") |>
+  ggplot(aes(score)) +
+  #geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_histogram(boundary = 0) +
+  theme_linedraw() +
+  xlab("Cohen's d effect size") +
+  ylab("Outcome") +
+  facet_grid(source ~ timepoint, scales = "free")
+
+```
+
+
+

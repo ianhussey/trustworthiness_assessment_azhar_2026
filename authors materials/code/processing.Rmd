@@ -1,0 +1,137 @@
+---
+title: "Re-Analysis of Azhar et al. - Data-cleaning file"
+author: "R-Code by Martin Plöderl" 
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+always_allow_html: true
+output:
+  html_document:
+    self_contained: false 
+    toc: true
+    toc_float:
+      collapsed: false
+      fontsize: 10pt
+---
+
+Calculation of effec sizes in Azhar et al. (2026)
+Paper here: https://www.sciencedirect.com/science/article/pii/S0165032725024978?via%3Dihub
+PubPeer comments: https://pubpeer.com/publications/799F60D117E44BAEE391AC93A216D2#1
+
+Data sent on 05.02.2026 from JAD, Delbello, Melissa DELBELMP@UCMAIL.UC.EDU
+
+```{r}
+
+library(readxl)
+library(dplyr)
+library(polyglotr)
+library(janitor)
+library(readr)
+
+draw0 = read_xlsx("../data/raw/encoded complete participants file.xlsx", sheet="scales C,I")
+draw1 = draw0 # to keeep the original file separately
+colnames(draw1) = google_translate(colnames(draw0), target_language = "en", source_language = "ar")
+draw2 = draw1 |>
+  janitor::clean_names() |>  # clean variable names
+  slice(-33:-35) |>
+  slice(-65:-69) |>
+  mutate(group = c(rep("omega",32),rep("placebo",32)), .before = 1)
+
+dstat0 = read_xlsx("../data/raw/encoded complete participants file.xlsx", sheet="data for statstics",
+                   skip=1)
+dstat1 = dstat0
+colnames(dstat1) = google_translate(colnames(dstat0), target_language = "en", source_language = "ar")
+dstat2 = dstat1 |>
+  janitor::clean_names() |>
+  select(-"x1") |>
+  slice(-33:-37) |>
+  slice(-65:-80) |>
+  mutate(group = c(rep("omega",32),rep("placebo",32)), .before = 1) |>
+  type.convert(as.is = TRUE) # transforms all numeric values from characters to numeric
+
+dat = list(draw = draw2, dstat = dstat2)
+write_rds(dat, "../data/processed/data_processed.rds")
+
+raw = dat[[1]] 
+stats = dat[[2]]
+
+raw_trimmed <- raw |>
+  transmute(
+    # Demographics
+    group,
+    # age                    = the_age,
+    # sex                    = gender_male_1_female_2,
+    # depression_medication  = do_you_take_any_depression_medication_yes_1_no_2,
+    # diseases               = do_you_suffer_from_any_of_the_following_diseases_blood_pressure_diseases_1_other_2_no_3,
+    # weight                 = the_weight,
+    # height                 = the_height,
+
+    # Baseline scales
+    stress_baseline        = stress_scale_24,
+    #stress_cat_baseline    = category_25,
+    depression_baseline    = phq_total_35,
+    anxiety_baseline       = anxiety_scale_43,
+    #anxiety_cat_baseline   = category_44,
+    # psqi_baseline          = psqi_score_76,
+    # psqi_cat_baseline      = category_77,
+    # epworth_baseline       = the_epworth_sleepiness_scale_86,
+    # epworth_cat_baseline   = category_87,
+    emq_baseline           = total_emq_114,
+
+    # Follow-up scales
+    stress_followup        = stress_scale_126,
+    #stress_cat_followup    = category_127,
+    depression_followup    = phq_total_137,
+    anxiety_followup       = anxiety_scale_145,
+    #anxiety_cat_followup   = category_146,
+    #psqi_followup          = psqi_score_177,
+    #psqi_cat_followup      = category_178,
+    #epworth_followup       = the_epworth_sleepiness_scale_187,
+    emq_followup           = total_emq_214
+  ) |>
+  mutate(row = row_number(), .before = 1)
+
+
+stats_trimmed <- stats |>
+  transmute(
+    # Demographics
+    group,
+    # age                    = the_age,
+    # sex                    = gender_male_1_female_2,
+    # depression_medication  = do_you_take_any_depression_medication_yes_1_no_2,
+    # diseases               = do_you_suffer_from_any_of_the_following_diseases_blood_pressure_diseases_1_other_2_no_3,
+    # weight                 = the_weight,
+    # height                 = the_height,
+    # 
+    # # Derived
+    # bmi                    = x9,          # weight / height_in_m^2
+
+    # Baseline scales
+    stress_baseline        = stress_scale_phq_9,   # NOTE: apparently mislabelled as PHQ-9; actually PSS
+    #stress_cat_baseline    = category_13,
+    depression_baseline    = phq9_10,
+    anxiety_baseline       = anxiety_scale_14,
+    #anxiety_cat_baseline   = category_15,
+    #psqi_baseline          = psqi_score_16,
+    #psqi_cat_baseline      = category_17,
+    #epworth_baseline       = the_epworth_sleepiness_scale_18,
+    #epworth_cat_baseline   = category_19,
+    emq_baseline           = memory_20,
+
+    # Follow-up scales
+    stress_followup        = stress_stress,
+    #stress_cat_followup    = x26,
+    depression_followup    = phq9_23,
+    anxiety_followup       = anxiety_scale_27,
+    #anxiety_cat_followup   = category_28,
+    #psqi_followup          = psqi_score_29,
+    #psqi_cat_followup      = psqi_score_30,  # NOTE: apparently mislabelled as score; actually category
+    #epworth_followup       = the_epworth_sleepiness_scale_31,
+    #epworth_cat_followup   = x32,            # not present in raw
+    emq_followup           = memory_33
+  ) |>
+  mutate(row = row_number(), .before = 1)
+
+write_csv(raw_trimmed, "../data/processed/data_processed_sheet_raw.csv")
+write_csv(stats_trimmed, "../data/processed/data_processed_sheet_stats.csv")
+
+```
+
