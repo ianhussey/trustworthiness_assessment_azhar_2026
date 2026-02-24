@@ -1,1 +1,4 @@
 *.DS_Store
+/authors materials/data/raw
+/authors materials/data/processed
+/old
