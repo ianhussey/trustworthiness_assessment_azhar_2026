@@ -27,13 +27,13 @@ library(janitor)
 library(readr)
 
 draw0 = read_xlsx("../data/raw/encoded complete participants file.xlsx", sheet="scales C,I")
-draw1 = draw0 # to keeep the original file separately
+draw1 = draw0 # to keep the original file separately
 colnames(draw1) = google_translate(colnames(draw0), target_language = "en", source_language = "ar")
 draw2 = draw1 |>
   janitor::clean_names() |>  # clean variable names
   slice(-33:-35) |>
   slice(-65:-69) |>
-  mutate(group = c(rep("omega",32),rep("placebo",32)), .before = 1)
+  mutate(group = c(rep("placebo",32), rep("omega",32)), .before = 1)
 
 dstat0 = read_xlsx("../data/raw/encoded complete participants file.xlsx", sheet="data for statstics",
                    skip=1)
@@ -44,7 +44,7 @@ dstat2 = dstat1 |>
   select(-"x1") |>
   slice(-33:-37) |>
   slice(-65:-80) |>
-  mutate(group = c(rep("omega",32),rep("placebo",32)), .before = 1) |>
+  mutate(group = c(rep("placebo",32), rep("omega",32)), .before = 1) |>
   type.convert(as.is = TRUE) # transforms all numeric values from characters to numeric
 
 dat = list(draw = draw2, dstat = dstat2)
@@ -132,6 +132,13 @@ stats_trimmed <- stats |>
 
 write_csv(raw_trimmed, "../data/processed/data_processed_sheet_raw.csv")
 write_csv(stats_trimmed, "../data/processed/data_processed_sheet_stats.csv")
+
+dat_combined <- full_join(raw_trimmed, 
+                          stats_trimmed, 
+                          by = c("row", "group"), # note that we previously matched these with age, gender, bmi etc showing that they do indeed match. These were removed to allow the code to run in the anonymised data.
+                          suffix = c("_raw", "_stat"))
+
+write_csv(dat_combined, "../data/processed/data_processed_combined.csv")
 
 ```
 

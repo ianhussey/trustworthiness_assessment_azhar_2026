@@ -24,7 +24,7 @@ knitr::opts_chunk$set(echo = TRUE,
 options(knitr.table.format = "html") # necessary configuration of tables
 
 # disable scientific notation
-options(scipen = 999, digits=2) 
+options(scipen = 999) 
 
 ```
 
@@ -46,6 +46,8 @@ library(dplyr)
 library(tidyverse)
 library(knitr)
 library(kableExtra)
+library(effectsize)
+library(roundwork)
 
 print_nice_table <- function(dat){
   dat |>
@@ -70,10 +72,7 @@ We cleaned data with "processing.Rmd".
 sheet_raw <- read_csv("../data/processed/data_processed_sheet_raw.csv")
 sheet_stats <- read_csv("../data/processed/data_processed_sheet_stats.csv")
 
-dat_combined <- full_join(sheet_raw, 
-                          sheet_stats, 
-                          by = c("row", "group"), # note that we previously matched these with age, gender, bmi etc showing that they do indeed match. These were removed to allow the code to run in the anonymised data.
-                          suffix = c("_raw", "_stat"))
+sheets_combined <- read_csv("../data/processed/data_processed_combined.csv")
 
 ```
 
@@ -206,7 +205,7 @@ write_csv(numeric_comparison, "../data/outputs/results_numeric_comparison_summar
 
 ```{r fig.height=12, fig.width=8}
 
-dat_combined_outcomes <- dat_combined |>
+sheets_combined_outcomes <- sheets_combined |>
   select(id = row, group, contains("_followup_"), contains("_baseline_")) |>
   select(!contains("_cat_")) |>
   pivot_longer(cols = c(-id, -group),
@@ -221,31 +220,52 @@ dat_combined_outcomes <- dat_combined |>
                         "emq"))
 
 
-ggplot(dat_combined_outcomes, aes(raw, stat, color = group)) +
+ggplot(sheets_combined_outcomes, aes(raw, stat, color = group)) +
   geom_point(alpha = 0.7) +
   geom_abline(slope = 1, intercept = 0) +
   theme_linedraw() +
   #coord_fixed() +
   facet_grid(outcome ~ timepoint, scales = "free") +
-  xlab("'raw' sheet") +
-  ylab("'stats' sheet") +
+  xlab("raw sheet") +
+  ylab("stats sheet") +
   labs(title = "Comparison of the data between the Excel file's raw and stats sheets",
        subtitle = "Diagonal line represents perfect agreement")
 
-ggsave("../data/outputs/differences between sheets.png", width = 8, height = 12)
+ggsave("../data/outputs/differences_between_sheets_ipd_outcomes.png", width = 8, height = 12)
 
 ```
 
-Note that scores between the two sheets are matched on their row number, age, gender, and study condition; therefore differences between sheets cannot be due to the result of rearranging row order between them.  
+Note that scores between the two sheets were previously matched on their row number, age, gender, and study condition; therefore differences between sheets cannot be due to the result of rearranging row order between them. (Matching not done here to allow us to work with anonymized data)
 
 
-## Cohen's d
+## Summary stats
+
+### From article
 
 ```{r}
 
-library(effectsize)
+summary_table_from_article <- tribble(
+  ~outcome, ~timepoint, ~placebo_mean_error, ~omega_mean_error,
+  "PSS",    "Before",   "30.81 ± 3.51",   "30.78 ± 1.99",
+  "PSS",    "After",    "29.81 ± 0.61",   "14.66 ± 0.79",
+  "GAD-7",  "Before",   "18.19 ± 1.89",   "18.81 ± 1.55",
+  "GAD-7",  "After",    "18.09 ± 0.37",   "10.68 ± 0.54",
+  "PHQ-9",  "Before",   "22.50 ± 2.45",   "22.50 ± 2.37",
+  "PHQ-9",  "After",    "21.78 ± 0.33",   "13.19 ± 0.59",
+  "EMQ",    "Before",   "74.81 ± 14.20",   "75.35 ± 14.10",
+  "EMQ",    "After",    "74.28 ± 2.54",   "57.03 ± 1.96"
+)
 
-dat_combined_outcomes_for_es <- dat_combined |>
+summary_table_from_article |>
+  print_nice_table()
+
+```
+
+### ± SD
+
+```{r}
+
+sheets_combined_outcomes_for_es <- sheets_combined |>
   select(id = row, group, contains("_followup_"), contains("_baseline_")) |>
   select(!contains("_cat_")) |>
   pivot_longer(cols = c(-id, -group),
@@ -255,17 +275,85 @@ dat_combined_outcomes_for_es <- dat_combined |>
   filter(outcome %in% c("stress",			
                         "depression",
                         "anxiety",		
-                        "emq"))
+                        "emq")) |>
+  mutate(source = case_when(source == "raw" ~ "raw sheet",
+                            source == "stat" ~ "stats sheet"))
 
-results <- dat_combined_outcomes_for_es %>%
+sheets_combined_outcomes_for_es %>%
+  group_by(outcome, timepoint, group, source) %>% 
+  summarise(mean = mean(score),
+            sd = sd(score),
+            n = n()) |>
+  mutate(across(where(is.numeric), ~ sprintf("%.2f", .x))) |>
+  mutate(string_sd = paste(mean, "±", sd)) |>
+  select(outcome, timepoint, group, source, string_sd) |>
+  pivot_wider(names_from = c(group, source),
+              values_from = string_sd) |>
+  select(outcome, timepoint, placebo_raw = `placebo_raw sheet`, omega_raw = `omega_raw sheet`, placebo_stats	= `placebo_stats sheet`, omega_stats = `omega_stats sheet`) |>
+  mutate(outcome = case_when(outcome == "anxiety" ~ "GAD-7",
+                             outcome == "depression" ~ "PHQ-9",
+                             outcome == "stress" ~ "PSS",
+                             outcome == "emq" ~ "EMQ"),
+         outcome = factor(outcome, levels = c("PSS", "GAD-7", "PHQ-9", "EMQ"))) |>  
+  arrange(outcome) |>
+  print_nice_table()
+
+```
+
+### ± SE
+
+```{r}
+
+sheets_combined_outcomes_for_es %>%
+  group_by(outcome, timepoint, group, source) %>% 
+  summarise(mean = mean(score),
+            se = plotrix::std.error(score),
+            n = n()) |>
+  mutate(across(where(is.numeric), ~ sprintf("%.2f", .x))) |>
+  mutate(string_se = paste(mean, "±", se)) |>
+  select(outcome, timepoint, group, source, string_se) |>
+  pivot_wider(names_from = c(group, source),
+              values_from = string_se) |>
+  select(outcome, timepoint, placebo_raw = `placebo_raw sheet`, omega_raw = `omega_raw sheet`, placebo_stats	= `placebo_stats sheet`, omega_stats = `omega_stats sheet`) |>
+  mutate(outcome = case_when(outcome == "anxiety" ~ "GAD-7",
+                             outcome == "depression" ~ "PHQ-9",
+                             outcome == "stress" ~ "PSS",
+                             outcome == "emq" ~ "EMQ"),
+         outcome = factor(outcome, levels = c("PSS", "GAD-7", "PHQ-9", "EMQ"))) |>  
+  arrange(outcome) |>
+  print_nice_table()
+
+```
+
+Conclusion:
+
+- Neither the raw nor stats sheets can reproduce the means and ± terms reported in the article's table 3. 
+- There is greater match between the means in Table 3 and those calculated from the stats sheet than the raw sheet. However, the stats sheet's sum scores do not match the raw data, as shown above.
+- The ± likely represent a mix of SEs and SDs.
+
+## Cohen's d
+
+```{r}
+
+results <- sheets_combined_outcomes_for_es %>%
+  mutate(group = factor(group, levels = c("placebo", "omega"))) |>
   group_by(outcome, timepoint, source) %>% 
-  group_modify(~ cohens_d(score ~ group, data = .x)) |>
+  group_modify(~ effectsize::cohens_d(score ~ group, data = .x)) |>
   select(outcome, timepoint, cohens_d = Cohens_d, cohens_d_ci_lower = CI_low, cohens_d_ci_upper = CI_high) |>
-  mutate_if(is.numeric, round, digits = 2) |>
   mutate(outcome = forcats::fct_relevel(outcome, "depression", "anxiety", "stress", "emq")) |>
   arrange(outcome)
 
 results |>
+  mutate_if(is.numeric, round, digits = 2) |>
+  print_nice_table()
+
+results |>
+  select(source, outcome, timepoint, cohens_d) |>
+  pivot_wider(names_from = source, 
+              values_from = cohens_d) |>
+  janitor::clean_names() |>
+  mutate(cohens_d_stats_percent_of_raw = round_up(stats_sheet / raw_sheet * 100, 1)) |>
+  mutate_if(is.numeric, round, digits = 2) |>
   print_nice_table()
 
 ggplot(results, aes(cohens_d, outcome, color = source)) +
@@ -278,22 +366,16 @@ ggplot(results, aes(cohens_d, outcome, color = source)) +
   ylab("Outcome") +
   facet_wrap(~ timepoint, ncol = 1)
 
-```
-
-
-```{r}
-
-dat_combined_outcomes_for_es |>
-  filter(outcome == "depression") |>
-  ggplot(aes(score)) +
-  #geom_vline(xintercept = 0, linetype = "dotted") +
-  geom_histogram(boundary = 0) +
-  theme_linedraw() +
-  xlab("Cohen's d effect size") +
-  ylab("Outcome") +
-  facet_grid(source ~ timepoint, scales = "free")
+ggsave("../data/outputs/differences_between_sheets_cohens_d.png", width = 6, height = 4)
 
 ```
+
+The Cohen's d values do not match those reported in the article's Table 3. 
+
+The values recalculated from the stats sheet are much closer than those from the raw sheet.
+
+However, the stats sheet's sum scores do not match the raw data, as shown above.
+
 
 
 
